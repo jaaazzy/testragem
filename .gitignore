@@ -1,0 +1,94 @@
+# Local tools and editor state
+.idea/
+*.iml
+.DS_Store
+.env
+.env.*
+!.env.example
+# Client
+client/node_modules/
+client/dist/
+client/test-results/
+# Java
+.m2/
+server/target/
+# Python
+engine/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+# Private documentation; publish only the root README
+docs/
+documentation/
+*.md
+*.mdx
+*.rst
+*.drawio
+*.pdf
+*.doc
+*.docx
+*.ppt
+*.pptx
+!/README.md
+
+# Local configuration and credentials
+.agents/
+.codex/
+.aws/
+.vscode/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+credentials*.json
+*service-account*.json
+.env.example
+
+# Private datasets, exports, backups, and runtime storage
+data/
+datasets/
+uploads/
+storage/
+exports/
+backups/
+*.csv
+*.tsv
+*.parquet
+*.arrow
+*.feather
+*.xlsx
+*.xls
+*.jsonl
+*.ndjson
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.bak
+*.zip
+*.7z
+*.tar
+*.gz
+*.sql
+!server/src/main/resources/db/migration/*.sql
+!server/src/test/resources/pre-auth-schema.sql
+
+# Generated artifacts and local overrides
+node_modules/
+dist/
+target/
+.venv/
+venv/
+test-results/
+coverage/
+.coverage
+htmlcov/
+.playwright-cli/
+*.log
+*.local
+*.local.properties
+*.hprof
