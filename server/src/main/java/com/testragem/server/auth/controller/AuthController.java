@@ -22,6 +22,7 @@ import org.springframework.security.web.context.HttpSessionSecurityContextReposi
 import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.web.bind.annotation.*;
 
+/** Handles account requests and saves successful authentication in a server-managed session. */
 @RestController
 public class AuthController {
     private final AuthService service;
@@ -39,6 +40,7 @@ public class AuthController {
         this.verification = verification;
     }
 
+    // The browser retrieves this token before a state-changing request, including login.
     @GetMapping("/api/auth/csrf")
     Map<String, String> csrf(CsrfToken token) {
         return Map.of("token", token.getToken(), "headerName", token.getHeaderName());
@@ -58,8 +60,10 @@ public class AuthController {
         // Cap retained key length even for invalid input.
         throttle.check("login-email:" + email.substring(0, Math.min(email.length(), 254)), 10);
         User user = service.login(input.email(), input.password());
+        // Use the stable user UUID as the principal. Private APIs derive ownership from this value.
         var auth = UsernamePasswordAuthenticationToken.authenticated(user.id().toString(), null,
                 List.of(new SimpleGrantedAuthority("ROLE_USER")));
+        // Rotate the session ID and CSRF token so pre-login credentials cannot be reused.
         sessions.onAuthentication(auth, request, response);
         var session = request.getSession(true);
         session.setAttribute(SessionLifetimeFilter.STARTED, clock.instant());
@@ -67,6 +71,7 @@ public class AuthController {
         var context = SecurityContextHolder.createEmptyContext();
         context.setAuthentication(auth);
         SecurityContextHolder.setContext(context);
+        // Save the context so later requests can identify the user from the session cookie.
         contexts.saveContext(context, request, response);
         return user;
     }

@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { ErrorNotice, FieldError } from '@/components/error-notice'
 import { authApi, authErrorMessage, AuthError } from '../api'
 
 export function VerificationPanel({ initialEmail = '', sent = false }: { initialEmail?: string; sent?: boolean }) {
@@ -70,19 +71,19 @@ export function VerificationPanel({ initialEmail = '', sent = false }: { initial
       <div className="space-y-2.5">
         <Label htmlFor="verification-email">Email address</Label>
         <Input ref={emailInput} id="verification-email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} required maxLength={254} value={email} onChange={event => { setEmail(event.target.value); setEmailError(''); setError(''); setMessage(''); setCode(''); setCodeError('') }} disabled={pending !== null} aria-invalid={Boolean(emailError)} aria-describedby={emailError ? 'verification-email-error' : undefined} />
-        {emailError && <p id="verification-email-error" className="text-sm leading-5 text-destructive">{emailError}</p>}
+        {emailError && <FieldError id="verification-email-error" message={emailError} />}
       </div>
       <div className="space-y-2.5">
         <Label htmlFor="verification-code">Verification code</Label>
         <Input ref={codeInput} id="verification-code" name="code" type="text" inputMode="numeric" autoComplete="one-time-code" pattern="[0-9]{6}" maxLength={6} required value={code} onChange={event => { setCode(event.target.value.replace(/\D/g, '').slice(0, 6)); setCodeError(''); setError('') }} placeholder="000000" disabled={pending !== null} aria-invalid={Boolean(codeError)} aria-describedby={codeError ? 'verification-code-error' : 'verification-code-hint'} className="h-14 pl-6 text-center text-2xl font-semibold tracking-[.45em] tabular-nums" />
         <p id="verification-code-hint" className="text-xs leading-5 text-muted-foreground">Use the latest code. You can paste all six digits at once.</p>
-        {codeError && <p id="verification-code-error" role="alert" className="text-sm leading-6 text-destructive">{codeError}</p>}
+        {codeError && <FieldError id="verification-code-error" message={codeError} />}
       </div>
       <Button type="submit" className="w-full" size="lg" disabled={pending !== null}>{pending === 'verify' ? 'Verifying…' : 'Verify email'}</Button>
     </form>
-    <div role="status" aria-live="polite" className="text-sm leading-6">
-      {error && <p className="text-destructive">{error}</p>}
-      {message && <p>{message}</p>}
+    <div className="space-y-3 text-sm leading-6">
+      {error && <ErrorNotice title="Email verification could not continue" description={error} />}
+      {message && <p role="status">{message}</p>}
     </div>
     <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4"><p className="text-sm text-muted-foreground">Didn’t get the code?</p><Button variant="link" className="px-0" onClick={resend} disabled={pending !== null}>{pending === 'resend' ? 'Sending…' : 'Send a new code'}</Button></div>
   </div>

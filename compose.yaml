@@ -1,0 +1,76 @@
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: testragem
+      POSTGRES_USER: testragem
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in your private deployment environment}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testragem -d testragem"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+    networks: [data]
+  api:
+    build: ./server
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://database:5432/testragem
+      DB_USERNAME: testragem
+      DB_PASSWORD: ${DB_PASSWORD}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      AUTH_PUBLIC_URL: ${AUTH_PUBLIC_URL:-http://localhost:8088}
+      BACKTEST_DATASET_CSV: ${BACKTEST_DATASET_CSV:-}
+      BACKTEST_DATASET_SOURCE: ${BACKTEST_DATASET_SOURCE:-Operator-provided historical CSV}
+      SPRING_MAIL_HOST: ${SPRING_MAIL_HOST:-}
+      SPRING_MAIL_PORT: ${SPRING_MAIL_PORT:-587}
+      SPRING_MAIL_USERNAME: ${SPRING_MAIL_USERNAME:-}
+      SPRING_MAIL_PASSWORD: ${SPRING_MAIL_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+    volumes:
+      - ${DATASET_DIRECTORY:-./data}:/datasets:ro
+    mem_limit: 768m
+    cpus: 1.0
+    restart: unless-stopped
+    networks: [data, edge]
+  ai:
+    profiles: [ai]
+    build: ./ai-service
+    environment:
+      AI_HOST: 0.0.0.0
+      AI_PORT: 8001
+      AI_LOG_LEVEL: ${AI_LOG_LEVEL:-info}
+    ports:
+      - "127.0.0.1:8001:8001"
+    mem_limit: 512m
+    cpus: 1.0
+    restart: unless-stopped
+    networks: [edge]
+  web:
+    build: ./client
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - ${HTTP_PORT:-8088}:80
+      - ${HTTPS_PORT:-8443}:443
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    restart: unless-stopped
+    networks: [edge]
+volumes:
+  database:
+  caddy_data:
+  caddy_config:
+networks:
+  data:
+    internal: true
+  edge:

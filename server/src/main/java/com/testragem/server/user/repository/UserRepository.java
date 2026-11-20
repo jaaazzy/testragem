@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.util.Optional;
 import java.util.UUID;
 
+/** Separates public identity reads from password-hash reads used only during authentication. */
 @Repository
 public class UserRepository {
     private final JdbcClient jdbc;

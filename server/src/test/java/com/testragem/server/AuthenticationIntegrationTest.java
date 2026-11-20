@@ -109,12 +109,12 @@ class AuthenticationIntegrationTest {
 
     @Test void invalidInputAndMalformedJsonAreRejected() throws Exception {
         Browser b = new Browser(); b.csrf();
-        for (String email : new String[]{"", "no-at-sign", "a..b@example.com", "é@example.com"}) {
+        for (String email : new String[]{"", "no-at-sign", "a..b@example.com", "Ã©@example.com"}) {
             assertThat(b.register(email, PASSWORD).statusCode()).isEqualTo(400);
         }
         assertThat(b.register(email(), "short").statusCode()).isEqualTo(400);
         assertThat(b.register(email(), "a".repeat(73)).statusCode()).isEqualTo(400);
-        assertThat(b.register(email(), "é".repeat(37)).statusCode()).isEqualTo(400);
+        assertThat(b.register(email(), "Ã©".repeat(37)).statusCode()).isEqualTo(400);
         assertThat(b.post("/api/auth/register", "{\"email\":null}").statusCode()).isEqualTo(400);
         assertThat(b.post("/api/auth/register", "{broken").body()).contains("invalid_request");
         assertThat(b.post("/api/auth/register", "{\"email\":\"x@example.com\",\"displayName\":\" \",\"password\":\"" + PASSWORD + "\"}").statusCode()).isEqualTo(400);

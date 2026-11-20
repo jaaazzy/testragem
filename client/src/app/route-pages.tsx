@@ -1,6 +1,7 @@
 import { useEffect } from 'react'
 import { Link, isRouteErrorResponse, useRouteError } from 'react-router'
 import { Button } from '@/components/ui/button'
+import { ErrorNotice } from '@/components/error-notice'
 
 export function NotFoundPage({ workspace = false }: { workspace?: boolean }) {
   useEffect(() => { document.title = 'Page not found | Testragem' }, [])
@@ -11,5 +12,5 @@ export function NotFoundPage({ workspace = false }: { workspace?: boolean }) {
 export function RouteErrorPage() {
   const error = useRouteError()
   if (isRouteErrorResponse(error) && error.status === 404) return <NotFoundPage />
-  return <main className="mx-auto max-w-3xl px-6 py-20"><h1 className="text-3xl font-semibold tracking-tight">We couldn’t open this page.</h1><p role="alert" className="mt-4 max-w-lg text-sm leading-6 text-muted-foreground">Something went wrong loading the page. Try again, or return to the home page.</p><div className="mt-6 flex flex-wrap gap-3"><Button onClick={() => window.location.reload()}>Reload page</Button><Button variant="outline" asChild><Link to="/">Back to home</Link></Button></div></main>
+  return <main className="mx-auto max-w-3xl px-6 py-20"><h1 className="text-3xl font-semibold tracking-tight">We couldn’t open this page.</h1><ErrorNotice className="mt-5" title="Page could not load" description="Something went wrong loading the page. Try again, or return to the home page." /><div className="mt-6 flex flex-wrap gap-3"><Button onClick={() => window.location.reload()}>Reload page</Button><Button variant="outline" asChild><Link to="/">Back to home</Link></Button></div></main>
 }

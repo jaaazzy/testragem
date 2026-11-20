@@ -82,6 +82,20 @@ const pending = new Map()
 const errors = []
 let mode = 'authenticated'
 let failLogout = false
+let researchReady = false
+let chartUnavailable = false
+let datasetFailure = false
+let backtestFailure = null
+let preferencesFailure = false
+let annotationFailure = false
+let loginFailure = false
+const researchCandles = Array.from({length:160},(_,index)=>{const close=100+25*index/159+4*Math.sin(index*Math.PI/15)*Math.sin(index*Math.PI/159);const open=index===0?100:100+25*(index-1)/159+4*Math.sin((index-1)*Math.PI/15)*Math.sin((index-1)*Math.PI/159);return {timestamp:new Date(Date.UTC(2025,0,1,index)).toISOString(),open,high:Math.max(open,close)+1.3,low:Math.min(open,close)-1.1,close,volume:100+index}})
+const savedResearchRuns = []
+const workspacePresets = []
+const workspaceAnnotations = new Map()
+const workspacePreferences = new Map()
+const defaultPreferences = {initialCapital:10000,feeBps:0,slippageBps:0,allocationPercent:100,evaluationGoal:'return'}
+const researchDataset = {id:'5b745c7a-893a-4477-871c-bc95eb6d068b',symbol:'BTCUSDT',timeframe:'1h',source:'Synthetic browser test fixture',fingerprint:'a'.repeat(64),coverageStart:'2025-01-01T00:00:00Z',coverageEnd:researchCandles.at(-1).timestamp,candleCount:researchCandles.length,missingHours:0}
 let releaseIdentity
 const identityReady = new Promise(resolve => { releaseIdentity = resolve })
 const fixture = { id: '8cce43b1-4047-4ded-bb14-ab9442fbcf27', displayName: 'Alex Morgan', email: 'alex@example.com', createdAt: '2026-11-09T00:00:00Z' }
@@ -106,19 +120,74 @@ ws.onmessage = async ({ data }) => {
       status = mode === 'authenticated' ? 200 : mode === 'offline' ? 503 : 401
       body = status === 200 ? fixture : { error: 'unauthenticated' }
     } else if (path === '/api/auth/csrf') body = { token: 'test-csrf', headerName: 'X-CSRF-TOKEN' }
-    else if (path === '/api/auth/login') { mode = 'authenticated'; body = fixture }
+    else if (path === '/api/auth/login') { if(loginFailure){status=401;body={error:'invalid_credentials'}}else{mode = 'authenticated'; body = fixture} }
     else if (path === '/api/auth/register') { status = 201; body = fixture }
     else if (path === '/api/auth/verify-email') { status = 204 }
     else if (path === '/api/auth/resend-verification') { status = 202; body = { message: 'Check your inbox' } }
     else if (path === '/api/auth/logout') { status = failLogout ? 503 : 204; if (!failLogout) mode = 'guest' }
+    else if (path === '/api/datasets') {if(datasetFailure){status=503;body={error:'INTERNAL_DIAGNOSTIC_NOT_FOR_DISPLAY'}}else body = researchReady ? [researchDataset] : []}
+    else if (path === '/api/strategies') body = ['buy-and-hold','ma-crossover','rsi'].map(id=>({id,name:id,version:'1',available:researchReady,defaults:{}}))
+    else if (path === '/api/backtests' && request.method==='POST') {
+      if(backtestFailure){status=backtestFailure.status;body=backtestFailure.body}
+      else if(!researchReady){status=501;body={error:'configuration_module_pending'}}
+      else {
+        const configuration={...JSON.parse(request.postData),strategyVersion:'fixture-1'}
+        const capital=configuration.initialCapital
+        const run={id:'4e993a49-5102-46d5-ab5b-7eb16050e6a'+(6+savedResearchRuns.length),configuration,datasetFingerprint:researchDataset.fingerprint,completedAt:'2026-11-10T00:00:00Z',result:{finalEquity:capital*1.25,totalReturn:.25,maxDrawdown:0,totalFees:0,totalSlippage:0,engineVersion:'browser-fixture',fills:[{sequenceNumber:1,executedAt:configuration.rangeStart,side:'BUY',quantity:capital/100,referencePrice:100,executionPrice:100,fee:0,slippageCost:0,cashAfter:0}],equityPoints:[{timestamp:configuration.rangeStart,cash:0,positionQuantity:capital/100,equity:capital,drawdown:0},{timestamp:configuration.rangeEnd,cash:0,positionQuantity:capital/100,equity:capital*1.25,drawdown:0}]}}
+        let peak=capital
+        run.result.equityPoints=researchCandles.map(candle=>{const equity=capital*candle.close/100;peak=Math.max(peak,equity);return {timestamp:candle.timestamp,cash:0,positionQuantity:capital/100,equity,drawdown:(peak-equity)/peak}})
+        run.result.maxDrawdown=Math.max(...run.result.equityPoints.map(point=>point.drawdown))
+        savedResearchRuns.push({owner:fixture.id,run});status=201;body=run
+      }
+    }
+    else if (path === '/api/workspace/preferences') {
+      if(preferencesFailure&&request.method==='PUT'){status=400;body={error:'invalid_configuration',fields:{feeBps:'Use at most six decimal places.'}}}
+      else {if (request.method === 'PUT') workspacePreferences.set(fixture.id, JSON.parse(request.postData));body = workspacePreferences.get(fixture.id) ?? defaultPreferences}
+    }
+    else if (path === '/api/workspace/presets' && request.method === 'GET') body = workspacePresets.filter(item=>item.owner===fixture.id).map(item=>item.versions.at(-1))
+    else if (path === '/api/workspace/presets' || /^\/api\/workspace\/presets\/[^/]+\/versions$/.test(path)) {
+      const presetId=path.split('/')[4]
+      let preset=workspacePresets.find(item=>item.owner===fixture.id&&item.id===presetId)
+      if(request.method==='GET'){status=preset?200:404;body=preset?[...preset.versions].reverse():{error:'preset_not_found'}}
+      else {
+        if(!presetId){preset={id:'a93117ad-48ab-47f4-9be2-4d8ca353a00'+workspacePresets.length,owner:fixture.id,versions:[]};workspacePresets.push(preset)}
+        if(!preset){status=404;body={error:'preset_not_found'}}
+        else {const input=JSON.parse(request.postData);body={id:preset.id,version:preset.versions.length+1,name:input.name,configuration:input.configuration,createdAt:new Date().toISOString()};preset.versions.push(body);status=201}
+      }
+    }
+    else if (path === '/api/workspace/annotations') {
+      const requested=(new URL(request.url).searchParams.get('ids')??'').split(',')
+      body=savedResearchRuns.filter(item=>item.owner===fixture.id&&requested.includes(item.run.id)).map(item=>({id:item.run.id,annotation:workspaceAnnotations.get(item.run.id)??{title:'',notes:'',tags:[]}}))
+    }
+    else if(path.startsWith('/api/workspace/annotations/')&&request.method==='PUT'){
+      const runId=path.split('/').at(-1),saved=savedResearchRuns.find(item=>item.owner===fixture.id&&item.run.id===runId)
+      if(!saved){status=404;body={error:'backtest_not_found'}}else if(annotationFailure){status=400;body={error:'invalid_configuration',fields:{tags:'Use at most eight tags.'}}}else{body=JSON.parse(request.postData);workspaceAnnotations.set(runId,body)}
+    }
+    else if(path==='/api/backtests/compare'){
+      const requested=(new URL(request.url).searchParams.get('ids')??'').split(',')
+      body=requested.map(runId=>savedResearchRuns.find(item=>item.owner===fixture.id&&item.run.id===runId)?.run)
+      if(body.some(item=>!item)){status=404;body={error:'backtest_not_found'}}
+    }
+    else if (path === '/api/backtests') {const runs=savedResearchRuns.filter(item=>item.owner===fixture.id).map(item=>item.run);body={items:runs.map(run=>({id:run.id,strategy:run.configuration.strategy,initialCapital:run.configuration.initialCapital,finalEquity:run.result.finalEquity,totalReturn:run.result.totalReturn,completedAt:run.completedAt})),page:0,size:10,total:runs.length}}
+    else if (path.startsWith('/api/backtests/') && path.endsWith('/chart')) {
+      const saved=savedResearchRuns.find(item=>item.owner===fixture.id&&item.run.id===path.split('/').at(-2))
+      status=!saved?404:chartUnavailable?409:200
+      body=status===200?{dataset:researchDataset,candles:researchCandles}:{error:status===409?'dataset_snapshot_unavailable':'backtest_not_found'}
+    }
+    else if (path.startsWith('/api/backtests/')) {const saved=savedResearchRuns.find(item=>item.owner===fixture.id&&item.run.id===path.split('/').at(-1));status=saved?200:404;body=saved?.run??{error:'backtest_not_found'}}
     else { status = 404; body = { error: 'not_found' } }
-    await command('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(status === 204 ? '' : JSON.stringify(body)).toString('base64') })
+    try {
+      await command('Fetch.fulfillRequest', { requestId, responseCode: status, responseHeaders: [{ name: 'Content-Type', value: 'application/json' }], body: Buffer.from(status === 204 ? '' : JSON.stringify(body)).toString('base64') })
+    } catch (failure) {
+      // React StrictMode and route cleanup deliberately abort resource requests.
+      if (failure.code !== -32602) errors.push(JSON.stringify(failure))
+    }
   }
 }
 function command(method, params = {}) {
   return new Promise((resolve, reject) => {
     const call = ++id
-    const timer = setTimeout(() => { pending.delete(call); reject(new Error(`Browser command timed out: ${method}`)) }, 15000)
+    const timer = setTimeout(() => { pending.delete(call); reject(new Error(`Browser command timed out: ${method}\n${childOutput.slice(-4000)}`)) }, 15000)
     pending.set(call, { resolve, reject, timer })
     ws.send(JSON.stringify({ id: call, method, params }))
   })
@@ -174,7 +243,7 @@ try {
   assert.equal(await evaluate(`document.querySelector('#strategy').value`), 'ma-crossover')
   await until(`document.querySelector('main [role=status]')?.textContent.includes('Draft reset')`)
   await go('#/workspace/datasets'); await heading('Datasets')
-  assert.equal(await evaluate(`document.body.innerText.includes('No datasets are connected yet')`), true)
+  await until(`document.body.innerText.includes('No datasets are connected yet')`)
   await go('#/workspace/backtests'); await heading('Backtests')
   await go('#/workspace/account'); await heading('Your account')
   assert.equal(await evaluate(`document.querySelector('main').innerText.includes('alex@example.com')`), true)
@@ -255,8 +324,8 @@ try {
   console.log('PASS: public and authenticated 404 routes')
 
   mode = 'guest'
-  await command('Page.navigate', { url: `${appUrl}/#/workspace/backtests?status=complete` })
-  await command('Page.reload')
+  // A distinct document URL avoids reloading before same-document hash navigation commits.
+  await command('Page.navigate', { url: `${appUrl}/?guest-check#/workspace/backtests?status=complete` })
   await until(`location.hash.startsWith('#/login?next=')`)
   await until(`!!document.querySelector('#password')`)
   assert.equal(await evaluate(`new URLSearchParams(location.hash.split('?')[1]).get('next')`), '/workspace/backtests?status=complete')
@@ -388,6 +457,199 @@ try {
   console.log('PASS: light/dark toggle, no system option, saved preference, OS changes, mobile layout, and dark text contrast')
   console.log('PASS: shadcn skeleton loading, page transitions, keyboard theme toggle and browsers without View Transitions')
 
+  researchReady=true
+  await go('#/workspace/datasets'); await heading('Datasets')
+  await until(`document.body.innerText.includes('Synthetic browser test fixture')`)
+  await go('#/workspace'); await heading('Workspace')
+  await until(`document.querySelector('#dataset')?.value === '${researchDataset.id}'`)
+  await evaluate(`(() => {const select=document.querySelector('#strategy');select.value='buy-and-hold';select.dispatchEvent(new Event('change',{bubbles:true}));const input=document.querySelector('#capital');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'1000');input.dispatchEvent(new Event('input',{bubbles:true}));})()`)
+  await until(`!document.querySelector('main button[type=submit]').disabled`)
+  await evaluate(`document.querySelector('main button[type=submit]').click()`)
+  await heading('Backtest result')
+  await until(`document.body.innerText.includes('1,250.00')`)
+  assert.equal(savedResearchRuns.at(-1).run.configuration.initialCapital,1000)
+  assert.equal(await evaluate(`document.querySelector('table[aria-label="Executed trades"]')?.textContent.includes('BUY')`),true)
+  await until(`document.querySelectorAll('[data-candle]').length===80`)
+  assert.equal(await evaluate(`!!document.querySelector('svg[aria-label="Drawdown chart: percentage decline from the running equity peak"]')`),true)
+  await evaluate(`document.querySelector('button[aria-label="Zoom in charts"]').click()`)
+  await until(`document.querySelectorAll('[data-candle]').length===40`)
+  await evaluate(`document.querySelector('button[aria-label="Next chart window"]').click()`)
+  await until(`document.querySelector('[data-candle]').dataset.candle!=='2025-01-01T00:00:00.000Z'`)
+  await evaluate(`document.querySelector('button[aria-label="Locate buy trade 1 on chart"]').click()`)
+  await until(`document.querySelector('tr[data-selected="true"]')!==null`)
+  assert.equal(await evaluate(`document.querySelector('[data-candle]').dataset.candle`),'2025-01-01T00:00:00.000Z')
+  await evaluate(`document.querySelector('button[aria-label="Reset chart view"]').click()`)
+  await until(`document.querySelectorAll('[data-candle]').length===80`)
+  await evaluate(`window.scrollTo(0,0)`)
+  await screenshot('backtest-result-desktop.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'),false)
+  await screenshot('backtest-result-mobile.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false})
+  const chartRun=savedResearchRuns[0].run
+  chartRun.configuration.strategy='ma-crossover'
+  chartRun.configuration.parameters={fastPeriod:10,slowPeriod:30}
+  chartRun.result.indicatorPoints=researchCandles.slice(30).map(candle=>({timestamp:candle.timestamp,values:{fastSma:candle.close-1,slowSma:candle.close-2}}))
+  await go('#/workspace/backtests');await heading('Backtests')
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`document.querySelector('.research-slow-line')?.getAttribute('d').length>0`)
+  await screenshot('backtest-result-ma.png')
+  chartRun.configuration.strategy='rsi'
+  chartRun.configuration.parameters={period:14,lowerThreshold:30,upperThreshold:70}
+  chartRun.result.indicatorPoints=researchCandles.slice(14).map((candle,index)=>({timestamp:candle.timestamp,values:{rsi:50+25*Math.sin(index/8)}}))
+  await go('#/workspace/backtests');await heading('Backtests')
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`!!document.querySelector('svg[aria-label="Recorded RSI with entry and exit thresholds"]')`)
+  await chooseTheme('dark')
+  await delay(250)
+  await screenshot('backtest-result-rsi-dark.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  assert.equal(await evaluate('document.documentElement.scrollWidth > innerWidth'),false)
+  await evaluate(`document.getElementById('historical-price').scrollIntoView({block:'start',behavior:'instant'})`)
+  await screenshot('backtest-result-rsi-dark-mobile.png')
+  await evaluate(`document.querySelector('section[aria-label="RSI (14)"]').scrollIntoView({block:'start',behavior:'instant'})`)
+  await screenshot('backtest-result-rsi-drawdown-mobile.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false})
+  await chooseTheme('light')
+  chartUnavailable=true
+  await go('#/workspace/backtests');await heading('Backtests')
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`document.body.innerText.includes('original dataset is not loaded')`)
+  assert.equal(await evaluate(`!!document.querySelector('svg[aria-label="Equity curve: cash plus holdings at candle close"]')`),true)
+  chartUnavailable=false
+  chartRun.result.indicatorPoints=[]
+  await go('#/workspace/backtests');await heading('Backtests')
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`document.body.innerText.includes('No RSI values were recorded')`)
+  console.log('PASS: candlesticks, chart zoom/pan, trade focus, recorded SMA/RSI, missing traces and unavailable snapshot fallback')
+  await go('#/workspace/backtests');await heading('Backtests')
+  await until(`!!document.querySelector('main a[href="#/workspace/backtests/4e993a49-5102-46d5-ab5b-7eb16050e6a6"]')`)
+  await go('#/workspace');await heading('Workspace')
+  console.log('PASS: connected dataset, editable settings, CSRF submission, saved result, ledger, history and mobile result layout')
+
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`!!document.querySelector('#experiment-name')`)
+  await fill('#experiment-name','January baseline')
+  await fill('#experiment-notes','Compare fees before changing the strategy.')
+  await fill('#experiment-tags','baseline, btc')
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save experiment details').click()`)
+  await until(`document.body.innerText.includes('Experiment details saved.')`)
+  assert.equal(workspaceAnnotations.get(chartRun.id).title,'January baseline')
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent.includes('Reuse settings')).click()`)
+  await heading('Workspace')
+  await fill('#preset-name','My BTC research')
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save preset').click()`)
+  await until(`document.body.innerText.includes('Preset saved.')`)
+  assert.equal(workspacePresets.length,1)
+  await evaluate(`document.querySelector('#capital').select()`);await fill('#capital','2000')
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save new version').click()`)
+  await until(`document.querySelector('#preset-version')?.value==='2'`)
+  assert.equal(workspacePresets[0].versions.length,2)
+  assert.equal(workspacePresets[0].versions[0].configuration.initialCapital,1000)
+  await go('#/workspace/account');await heading('Your account')
+  await until(`!!document.querySelector('#default-initialCapital')`)
+  await evaluate(`document.querySelector('#default-initialCapital').select()`);await fill('#default-initialCapital','7500')
+  await evaluate(`(() => {document.querySelector('#evaluation-goal').value='drawdown';document.querySelector('#evaluation-goal').dispatchEvent(new Event('change',{bubbles:true}));return true})()`)
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save defaults').click()`)
+  await until(`document.body.innerText.includes('Research defaults saved.')`)
+  await go('#/workspace');await heading('Workspace')
+  await until(`![...document.querySelectorAll('button')].find(button=>button.textContent.includes('Use my defaults')).disabled`)
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent.includes('Use my defaults')).click()`)
+  assert.equal(await evaluate(`document.querySelector('#capital').value`),'7500')
+  await evaluate(`document.querySelector('button[type=submit]').click()`)
+  await heading('Backtest result')
+  assert.equal(savedResearchRuns.length,2)
+  await go('#/workspace/backtests');await heading('Backtests')
+  await until(`document.querySelectorAll('table[aria-label="Saved backtests"] tbody tr').length===2`)
+  await until(`document.body.innerText.includes('January baseline')`)
+  await evaluate(`document.querySelectorAll('input[type=checkbox]').forEach(input=>input.click())`)
+  await evaluate(`[...document.querySelectorAll('a')].find(link=>link.textContent==='Compare selected').click()`)
+  await heading('Compare experiments')
+  await until(`!!document.querySelector('table[aria-label="Backtest comparison"]')`)
+  assert.equal(await evaluate(`document.querySelector('#comparison-focus').value`),'drawdown')
+  assert.equal(await evaluate(`document.querySelectorAll('table[aria-label="Backtest comparison"] thead th').length`),3)
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('table[aria-label="Backtest comparison"] tbody td')).textAlign`),'right')
+  await screenshot('personal-comparison-desktop.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false)
+  await screenshot('personal-comparison-mobile.png')
+  await chooseTheme('dark');await screenshot('personal-comparison-dark-mobile.png');await chooseTheme('light')
+  await go('#/workspace/backtests');await heading('Backtests')
+  await until(`document.querySelectorAll('table[aria-label="Saved backtests"] tbody tr').length===2`)
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('table[aria-label="Saved backtests"] thead th:nth-child(2)')).textAlign`),'left')
+  assert.equal(await evaluate(`getComputedStyle(document.querySelector('table[aria-label="Saved backtests"] tbody td:nth-child(2)')).textAlign`),'left')
+  assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false)
+  await screenshot('personal-history-mobile.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false})
+  await go('#/workspace');await heading('Workspace');await screenshot('personal-presets-desktop.png')
+  console.log('PASS: versioned presets, experiment notes/tags, saved defaults, reuse, run comparison and table alignment')
+
+  // Error presentation: inline labels, focus, retained input, recovery and no raw diagnostics.
+  const capitalBeforeValidation=await evaluate(`document.querySelector('#capital').value`)
+  await evaluate(`document.querySelector('#capital').select()`);await fill('#capital','0')
+  await evaluate(`document.querySelector('button[type=submit]').click()`)
+  await until(`!!document.querySelector('#capital-error')`)
+  await until(`document.activeElement?.id==='capital'`)
+  assert.equal(savedResearchRuns.length,2,'Invalid local inputs must not submit a backtest')
+  await evaluate(`document.querySelector('#capital').select()`);await fill('#capital',capitalBeforeValidation)
+  assert.equal(await evaluate(`!!document.querySelector('#capital-error')`),false)
+  backtestFailure={status:400,body:{error:'invalid_configuration',fields:{rangeEnd:'Choose an end date within dataset coverage.',feeBps:'Use at most six decimal places.'}}}
+  const retainedCapital=await evaluate(`document.querySelector('#capital').value`)
+  await evaluate(`document.querySelector('button[type=submit]').click()`)
+  await until(`!!document.querySelector('#range-end-error')`)
+  await until(`document.activeElement?.id==='range-end'`)
+  assert.equal(await evaluate(`document.querySelector('#range-end').getAttribute('aria-invalid')`),'true')
+  assert.equal(await evaluate(`document.querySelector('#fee-bps').getAttribute('aria-describedby')`),'fee-bps-error')
+  assert.equal(await evaluate(`document.querySelector('#capital').value`),retainedCapital)
+  assert.equal(await evaluate(`document.body.innerText.includes('rangeEnd:')`),false)
+  await evaluate(`document.querySelector('#range-end-error').scrollIntoView({block:'center',behavior:'instant'})`)
+  await screenshot('errors-fields-desktop.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  await evaluate(`document.querySelector('[role=alert]').scrollIntoView({block:'center',behavior:'instant'})`)
+  assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false)
+  await screenshot('errors-validation-mobile.png')
+  for(const pair of await textContrast())assert.ok(pair.ratio>=4.5,`Light error contrast ${pair.fg}/${pair.bg}: ${pair.ratio}`)
+  await chooseTheme('dark')
+  await screenshot('errors-validation-dark-mobile.png')
+  for(const pair of await textContrast())assert.ok(pair.ratio>=4.5,`Error contrast ${pair.fg}/${pair.bg}: ${pair.ratio}`)
+  await chooseTheme('light')
+  await evaluate(`document.querySelector('#fee-bps').select()`);await fill('#fee-bps','1')
+  assert.equal(await evaluate(`document.querySelector('#fee-bps').getAttribute('aria-invalid')`),'false')
+  assert.equal(await evaluate(`!!document.querySelector('#fee-bps-error')`),false)
+  backtestFailure={status:429,body:{error:'too_many_requests'}}
+  await evaluate(`document.querySelector('button[type=submit]').click()`)
+  await until(`document.body.innerText.includes('Too many requests.')`)
+  assert.equal(await evaluate(`document.querySelector('#capital').value`),retainedCapital)
+  backtestFailure=null
+  datasetFailure=true
+  await go('#/workspace/datasets');await heading('Datasets')
+  await until(`document.body.innerText.includes('temporarily unavailable')`)
+  assert.equal(await evaluate(`document.body.innerText.includes('INTERNAL_DIAGNOSTIC_NOT_FOR_DISPLAY')`),false)
+  await screenshot('errors-dataset-mobile.png')
+  datasetFailure=false
+  await evaluate(`[...document.querySelectorAll('main button')].find(button=>button.textContent==='Try again').click()`)
+  await until(`document.body.innerText.includes('SHA-256 fingerprint')`)
+  await go('#/workspace/account');await heading('Your account')
+  await until(`!!document.querySelector('#default-feeBps')`)
+  preferencesFailure=true
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save defaults').click()`)
+  await until(`!!document.querySelector('#default-feeBps-error')`)
+  await until(`document.activeElement?.id==='default-feeBps'`)
+  assert.equal(await evaluate(`document.querySelector('#default-feeBps').getAttribute('aria-invalid')`),'true')
+  preferencesFailure=false
+  await go('#/workspace/backtests/'+chartRun.id);await heading('Backtest result')
+  await until(`!!document.querySelector('#experiment-tags')`)
+  annotationFailure=true
+  await evaluate(`[...document.querySelectorAll('button')].find(button=>button.textContent==='Save experiment details').click()`)
+  await until(`!!document.querySelector('#experiment-tags-error')`)
+  await until(`document.activeElement?.id==='experiment-tags'`)
+  annotationFailure=false
+  await command('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false})
+  await go('#/workspace');await heading('Workspace')
+  console.log('PASS: accessible field errors, readable summaries, retained values, rate limits, safe service errors and retry recovery')
+
+
+
   await command('Emulation.setEmulatedMedia', { features: [{name:'prefers-reduced-motion',value:'reduce'},{name:'prefers-reduced-transparency',value:'reduce'},{name:'prefers-contrast',value:'more'}] })
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('.workspace-toolbar')).backdropFilter`), 'none')
   assert.equal(await evaluate(`getComputedStyle(document.querySelector('main [data-slot=button]')).transitionDuration`), '0s')
@@ -447,6 +709,20 @@ try {
     await screenshot(`home-guest-${width}.png`)
   }
   console.log('PASS: guest header at 320–1440px; reduced-motion replay stays paused')
+  loginFailure=true
+  await go('#/login');await heading('Welcome back.')
+  await fill('#email','researcher@example.com');await fill('#password','Wrong password for test')
+  await evaluate(`document.querySelector('form[aria-label="Log in"] button[type=submit]').click()`)
+  await until(`document.body.innerText.includes('Your email or password is incorrect')`)
+  assert.equal(await evaluate(`document.querySelector('[role=alert] [data-slot=alert-title]').textContent`),'Could not log in')
+  assert.equal(await evaluate(`document.querySelector('#email').value`),'researcher@example.com')
+  await screenshot('errors-login-desktop.png')
+  await command('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true})
+  assert.equal(await evaluate('document.documentElement.scrollWidth>innerWidth'),false)
+  await screenshot('errors-login-mobile.png')
+  await chooseTheme('dark');await screenshot('errors-login-dark-mobile.png')
+  loginFailure=false
+  console.log('PASS: sign-in failures use an accessible notice and preserve entered credentials')
   console.log('Routing checks passed. Authentication responses were mocked at the browser boundary; no backend or real email is used.')
 } finally {
   await command('Page.close').catch(() => {})

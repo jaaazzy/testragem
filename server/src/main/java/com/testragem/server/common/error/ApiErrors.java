@@ -8,7 +8,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import com.testragem.server.backtest.validation.ConfigurationValidationException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 
+/** Converts known failures to stable JSON error codes without returning internal exception details. */
 @RestControllerAdvice
 public class ApiErrors {
     public static void write(HttpServletResponse response, int status, String code) throws IOException {
@@ -32,8 +36,13 @@ public class ApiErrors {
         return builder.body(Map.of("error", failure.code));
     }
 
-    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ExceptionHandler({HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class,MissingServletRequestParameterException.class})
     ResponseEntity<Map<String, String>> malformed() {
         return ResponseEntity.badRequest().body(Map.of("error", "invalid_request"));
+    }
+
+    @ExceptionHandler(ConfigurationValidationException.class)
+    ResponseEntity<Map<String,Object>> configuration(ConfigurationValidationException failure) {
+        return ResponseEntity.badRequest().body(Map.of("error","invalid_configuration","fields",failure.fields()));
     }
 }

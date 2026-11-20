@@ -1,4 +1,4 @@
-package com.testragem.server;
+package com.testragem.server.common.health;
 
 import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;

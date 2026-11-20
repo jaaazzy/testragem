@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, NavLink, useLocation, useMatches, useNavigate } from 'react-router'
 import { ArrowUpRight, ChevronRight, LogOut, Menu, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ErrorNotice } from '@/components/error-notice'
 import { useAuth } from '@/features/auth/store'
 import { authErrorMessage, type User } from '@/features/auth/api'
 import { cn } from '@/lib/utils'
@@ -41,7 +42,7 @@ function Sidebar({ user, onNavigate }: { user: User; onNavigate?: () => void }) 
           <span className="min-w-0"><span className="block truncate text-sm font-medium">{user.displayName}</span><span className="mt-0.5 block truncate text-xs text-muted-foreground" title={user.email}>{user.email}</span></span>
         </Link>
         <Button variant="ghost" disabled={pending} onClick={logout} className="mt-1 w-full justify-start px-3 text-muted-foreground"><LogOut aria-hidden="true" />{pending ? 'Signing out…' : 'Sign out'}</Button>
-        {error && <p role="alert" className="px-3 pt-2 text-xs leading-5 text-destructive">{error}</p>}
+        {error && <ErrorNotice className="mt-3" title="Sign-out failed" description={error} />}
       </div>
     </div>
   )
@@ -94,7 +95,7 @@ export function AppShell({ user, children }: { user: User; children: ReactNode }
           </div>
           <ThemeToggle />
         </header>
-        {error && <div role="status" className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b bg-muted px-5 py-2 text-sm sm:px-8"><p>{error}</p><Button variant="link" size="sm" onClick={() => void refresh()}>Try again</Button></div>}
+        {error && <div className="px-5 pt-4 sm:px-8"><ErrorNotice title="Session could not be checked" description={error} action={{ label: 'Try again', onClick: () => void refresh() }} /></div>}
         <main id="workspace-content" ref={main} tabIndex={-1} className="mx-auto max-w-[1240px] px-5 pb-12 pt-8 outline-none sm:px-8 sm:pt-10 lg:px-10"><PageTransition routeKey={location.pathname}>{children}</PageTransition></main>
       </div>
     </div>

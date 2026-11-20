@@ -33,8 +33,10 @@ public class SessionLifetimeFilter extends OncePerRequestFilter {
             Instant now = clock.instant();
             Instant lastSeen = (Instant) session.getAttribute(LAST_SEEN);
             if (!now.isBefore(started.plus(absolute)) || lastSeen == null || !now.isBefore(lastSeen.plus(idle))) {
+                // End authentication before Spring loads the security context for this request.
                 session.invalidate();
             } else {
+                // Activity extends the idle window, but cannot extend the absolute session lifetime.
                 session.setAttribute(LAST_SEEN, now);
             }
         }

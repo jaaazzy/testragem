@@ -7,6 +7,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
+/** Resolves the current user. A session cannot continue to identify a deleted account. */
 @Service
 public class UserService {
     private final UserRepository users;

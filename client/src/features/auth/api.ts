@@ -40,6 +40,7 @@ export const authApi = {
 }
 
 export function authErrorMessage(error: unknown): string {
+  if (error instanceof DOMException && error.name === 'TimeoutError') return 'The server took too long to respond. Try again shortly.'
   if (!(error instanceof AuthError)) return 'Cannot reach the server. Check your connection and try again.'
   if (error.code === 'email_already_registered') return 'This email already has an account. Log in instead.'
   if (error.code === 'invalid_credentials') return 'Your email or password is incorrect. Check both and try again.'
@@ -49,5 +50,6 @@ export function authErrorMessage(error: unknown): string {
   if (error.status === 429) return 'Too many attempts. Wait 15 minutes before trying again.'
   if (error.status === 403) return 'Your session changed or expired. Please try again.'
   if (error.status === 400) return 'Check your email and name. Use a password with at least 12 characters; very long passwords may need shortening.'
+  if (error.status >= 500) return 'The service is temporarily unavailable. Please try again shortly.'
   return 'The request could not be completed. Please try again.'
 }

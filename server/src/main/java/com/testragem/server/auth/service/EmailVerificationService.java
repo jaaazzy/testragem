@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Issues six-digit challenges and accepts an unexpired code only once. Stored codes are hashed. */
 @Service
 public class EmailVerificationService {
     private static final Duration LIFETIME = Duration.ofMinutes(10);
@@ -86,6 +87,7 @@ public class EmailVerificationService {
             throw invalidCode();
         }
         jdbc.sql("DELETE FROM email_verification_codes WHERE user_id = :id").param("id", userId).update();
+        // Consume the challenge and mark the account verified in the same transaction.
         jdbc.sql("UPDATE users SET email_verified_at = :now WHERE id = :id")
                 .param("id", userId).param("now", now()).update();
     }

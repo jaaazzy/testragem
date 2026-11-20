@@ -14,6 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/** Validates account input, hashes passwords, and requires email verification before sign-in. */
 @Service
 public class AuthService {
     private final UserRepository users;
@@ -40,12 +41,14 @@ public class AuthService {
         return normalized;
     }
 
+    // BCrypt accepts at most 72 UTF-8 bytes. Reject longer input instead of silently truncating it.
     private static boolean acceptablePassword(String password) {
         return password != null && password.codePointCount(0, password.length()) >= 12
                 && password.getBytes(StandardCharsets.UTF_8).length <= 72
                 && password.indexOf('\0') < 0;
     }
 
+    // Store the account and challenge in one transaction. Never save the plaintext password.
     @Transactional
     public User register(String email, String displayName, String password) {
         String normalized = normalizeEmail(email);

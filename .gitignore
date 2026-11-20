@@ -13,12 +13,15 @@ client/test-results/
 .m2/
 server/target/
 # Python
-engine/.venv/
+ai-service/.venv/
+ai-service/artifacts/
+ai-service/models/
+ai-service/build/
 __pycache__/
 *.py[cod]
 .pytest_cache/
 *.egg-info/
-# Private documentation; publish only the root README
+# Private documentation; keep README files available for source control
 docs/
 documentation/
 *.md
@@ -30,7 +33,7 @@ documentation/
 *.docx
 *.ppt
 *.pptx
-!/README.md
+!**/README.md
 
 # Local configuration and credentials
 .agents/
@@ -55,6 +58,7 @@ storage/
 exports/
 backups/
 *.csv
+!server/src/test/resources/market-fixture.csv
 *.tsv
 *.parquet
 *.arrow

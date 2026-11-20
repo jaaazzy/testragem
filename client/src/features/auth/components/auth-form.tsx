@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
-import { ArrowRight, Eye, EyeOff, Info } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert'
+import { ErrorNotice, FieldError } from '@/components/error-notice'
 import { authApi, authErrorMessage, AuthError } from '../api'
 import { useAuth } from '../store'
 import { VerificationPanel } from './verification-panel'
@@ -33,7 +33,7 @@ function PasswordField({ id, label, value, onChange, error, hint, autoComplete }
           {visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />}
         </Button>
       </div>
-      {error ? <p id={`${id}-error`} className="text-xs leading-5 text-destructive">{error}</p> : hint ? <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
+      {error ? <FieldError id={`${id}-error`} message={error} /> : hint ? <p id={`${id}-hint`} className="text-xs leading-5 text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }
@@ -101,14 +101,14 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
     <div className="space-y-6">
     <form onSubmit={submit} noValidate className="space-y-5" aria-busy={pending} aria-label={signup ? 'Create an account' : 'Log in'}>
       <fieldset disabled={pending} className="space-y-5">
-      {signup && <div className="space-y-2.5"><Label htmlFor="name">Your name</Label><Input id="name" name="name" autoComplete="name" value={values.name} onChange={event => update('name', event.target.value)} required maxLength={80} placeholder="Alex Morgan" aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? 'name-error' : undefined} />{errors.name && <p id="name-error" className="text-xs leading-5 text-destructive">{errors.name}</p>}</div>}
-      <div className="space-y-2.5"><Label htmlFor="email">Email address</Label><Input id="email" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} value={values.email} onChange={event => update('email', event.target.value)} required maxLength={254} placeholder="you@example.com" aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : undefined} />{errors.email && <p id="email-error" className="text-xs leading-5 text-destructive">{errors.email}</p>}</div>
+      {signup && <div className="space-y-2.5"><Label htmlFor="name">Your name</Label><Input id="name" name="name" autoComplete="name" value={values.name} onChange={event => update('name', event.target.value)} required maxLength={80} placeholder="Alex Morgan" aria-invalid={Boolean(errors.name)} aria-describedby={errors.name ? 'name-error' : undefined} />{errors.name && <FieldError id="name-error" message={errors.name} />}</div>}
+      <div className="space-y-2.5"><Label htmlFor="email">Email address</Label><Input id="email" name="email" type="email" autoComplete="email" autoCapitalize="none" spellCheck={false} value={values.email} onChange={event => update('email', event.target.value)} required maxLength={254} placeholder="you@example.com" aria-invalid={Boolean(errors.email)} aria-describedby={errors.email ? 'email-error' : undefined} />{errors.email && <FieldError id="email-error" message={errors.email} />}</div>
       <PasswordField id="password" label="Password" value={values.password} onChange={value => update('password', value)} error={errors.password} hint={signup ? 'Use at least 12 characters.' : undefined} autoComplete={signup ? 'new-password' : 'current-password'} />
       {signup && <PasswordField id="confirmPassword" label="Confirm password" value={values.confirmPassword} onChange={value => update('confirmPassword', value)} error={errors.confirmPassword} autoComplete="new-password" />}
       <div className="space-y-4 pt-1">
         <Button type="submit" size="lg" className="w-full" disabled={pending}>{pending ? 'Please wait…' : signup ? 'Create account' : 'Log in'}<ArrowRight aria-hidden="true" /></Button>
-        <div role="status" aria-live="polite" aria-atomic="true">
-          {message && <Alert className="text-destructive"><Info aria-hidden="true" /><AlertTitle>{needsVerification ? 'Check your email' : 'Unable to continue'}</AlertTitle><AlertDescription>{message}</AlertDescription></Alert>}
+        <div>
+          {message && <ErrorNotice title={signup ? "Account could not be created" : "Could not log in"} description={message} />}
         </div>
       </div>
       </fieldset>

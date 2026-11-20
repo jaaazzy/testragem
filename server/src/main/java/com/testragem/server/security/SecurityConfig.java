@@ -22,6 +22,7 @@ import org.springframework.security.web.authentication.session.SessionAuthentica
 import org.springframework.security.web.csrf.CsrfAuthenticationStrategy;
 import java.util.List;
 
+/** Defines password hashing, session authentication, CSRF checks, and API access rules. */
 @Configuration
 public class SecurityConfig {
     @Bean Clock clock() { return Clock.systemUTC(); }
@@ -40,6 +41,8 @@ public class SecurityConfig {
             CsrfTokenRepository csrf, Clock clock,
             @Value("${auth.idle-timeout}") Duration idle,
             @Value("${auth.absolute-timeout}") Duration absolute) throws Exception {
+        // Only the listed authentication and health routes are public. Other requests require authentication.
+        // Public POST routes still need CSRF tokens; permitAll does not disable CSRF validation.
         return http
                 .csrf(c -> c.csrfTokenRepository(csrf))
                 .securityContext(c -> c.securityContextRepository(context))
@@ -48,7 +51,8 @@ public class SecurityConfig {
                 .authorizeHttpRequests(a -> a
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login",
                                 "/api/auth/verify-email", "/api/auth/resend-verification").permitAll()
-                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf", "/api/health", "/actuator/health").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/auth/csrf", "/api/health", "/actuator/health",
+                                "/actuator/health/readiness").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint((req, res, ex) -> ApiErrors.write(res, 401, "unauthenticated"))

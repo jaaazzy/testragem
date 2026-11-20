@@ -11,6 +11,7 @@ import org.springframework.mail.javamail.MimeMessageHelper;
 import jakarta.mail.MessagingException;
 import org.springframework.stereotype.Component;
 
+/** Sends the same verification code as formatted HTML and a plain-text alternative. */
 @Component
 public class SmtpVerificationEmailSender implements VerificationEmailSender {
     private final ObjectProvider<JavaMailSender> mail;
@@ -24,6 +25,7 @@ public class SmtpVerificationEmailSender implements VerificationEmailSender {
     @Override
     public void send(String recipient, String code, String verificationPageUrl) {
         JavaMailSender sender = mail.getIfAvailable();
+        // Missing SMTP configuration is an explicit failure, not a simulated successful delivery.
         if (sender == null || from.isBlank()) throw unavailable();
         try {
             var message = sender.createMimeMessage();

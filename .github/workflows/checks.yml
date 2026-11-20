@@ -1,0 +1,58 @@
+name: Checks
+on: [push, pull_request]
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: testragem_test
+          POSTGRES_PASSWORD: integration-only
+          POSTGRES_DB: testragem_test
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U testragem_test" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - run: mvn -B verify
+        working-directory: server
+        env:
+          BACKTEST_TEST_DB_URL: jdbc:postgresql://localhost:5432/testragem_test
+          BACKTEST_TEST_DB_USERNAME: testragem_test
+          BACKTEST_TEST_DB_PASSWORD: integration-only
+  client:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      - run: npm run build && npm run lint
+      - run: npm test
+        env:
+          CHROME_NO_SANDBOX: '1'
+  ai:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-service/pyproject.toml
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m unittest discover -s tests -v

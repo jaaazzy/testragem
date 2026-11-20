@@ -18,6 +18,7 @@ public class AuthThrottle {
     private final Clock clock;
     public AuthThrottle(Clock clock) { this.clock = clock; }
 
+    // Count requests atomically across threads. Limits are stored only in this API process.
     public synchronized void check(String key, int limit) {
         Instant now = clock.instant();
         buckets.entrySet().removeIf(e -> !e.getValue().expires.isAfter(now));
